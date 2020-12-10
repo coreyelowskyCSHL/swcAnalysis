@@ -1,5 +1,3 @@
-git test
-
 import numpy as np
 import math
 import params
