@@ -40,6 +40,10 @@ SWC_DELIMITER = ' '
 # Structure ID Dictionary
 SID_DICT = {'soma': 1, 'axon': 2, 'basal dendrite': 3, 'apical dendrite': 4}
 
+# Structure Color Dictionary
+SID_COLORS = {0: 'green',1: 'black', 2: 'yellow', 3: 'red', 4: 'blue',5:'purple'}
+SID_PLOTTING_RADII = {0:1,1:100,2:1,3:1,4:1,5:1}
+
 # soma collapse radius
 SOMA_COLLAPSE_RADIUS = 30
 
@@ -51,4 +55,9 @@ METRIC_ORDER = ['Bif_ampl_remote', 'Bif_tilt_remote', 'Branch_Order', 'Branch_pa
 
 METRIC_DISPLAY_DICT = {'PathDistance':'Path Distance', 'Branch_pathlength':'Branch Path Length', 'N_stems':'N Stems', 'Length':'Length', 'EucDistance':'EucDistance', 'Height':'Height'}
 
+SHEAR_FACTOR = -.7 / ANISOTROPY_FACTOR
+
+# Volume Sizes
+X_SIZE = 2048
+Y_SIZE = 1024
 

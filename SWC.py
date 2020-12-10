@@ -5,6 +5,10 @@ from Node import Node
 from os.path import exists
 from sys import exit
 import tifffile as tif
+import copy
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
 
 """
 SWC object
@@ -188,7 +192,7 @@ class SWC:
 		
 		"""
 
-		self.scaleCoords(scaleFactors=[0,-1,0], nodeRoot=nodeRoot)
+		self.scaleCoords(scaleFactors=[1,-1,1], nodeRoot=nodeRoot)
 
 	def pixelsToMicrons(self,orientation, nodeRoot=None):
 
@@ -206,8 +210,25 @@ class SWC:
 		else:
 			exit('Orientation Variable Not Valid: ' + orientation)
 
-		self.scaleCoords(scaleFactors=resFactors, nodeRoot=nodeRoot)	
+		self.scaleCoords(scaleFactors=resFactors, nodeRoot=nodeRoot)
+
+	def micronsToPixels(self,orientation, nodeRoot=None):
+
+		"""
+		Params: orientation - string, orientation of coordinates (coronal or oblique)
+
+		Converts all coordinates from microns to pixels
 	
+		"""
+		
+		if orientation == 'oblique':
+			resFactors = params.RES_OBLIQUE
+		elif orientation == 'coronal':
+			resFactors = params.RES_CORONAL
+		else:
+			exit('Orientation Variable Not Valid: ' + orientation)
+
+		self.scaleCoords(scaleFactors=1/np.array(resFactors), nodeRoot=nodeRoot)
 
 
 	def extractTypeTree(self, structure):
@@ -416,7 +437,7 @@ class SWC:
 
 		return np.array(out_swc)
 
-	def save(self, outPath, fmt=params.SWC_FORMAT_FLOAT):
+	def saveSWC(self, outPath, fmt=params.SWC_FORMAT_FLOAT):
 
 		"""
 		Params: outPath - string, path to save SWC
@@ -907,9 +928,30 @@ class SWC:
 		return innerNodes, outerNodes
 		
 
-
+	def plot(self,dim=2):
 	
-			
+		swcArray = self.generateSWCArray()		
+		uniqueSID = np.unique(swcArray[:,params.SID_INDEX]).astype(int)		
+
+		if dim == 2:
+			for sid in uniqueSID:
+				sidCoords = swcArray[swcArray[:,params.SID_INDEX] == sid]
+				plt.scatter(sidCoords[:,params.X_INDEX],-sidCoords[:,params.Y_INDEX], color=params.SID_COLORS[sid], s=params.SID_PLOTTING_RADII[sid])
+
+			plt.show()
+		elif dim == 3:
+
+			fig = plt.figure()
+			ax = fig.add_subplot(111,projection='3d')
+			for sid in uniqueSID:
+				sidCoords = swcArray[swcArray[:,params.SID_INDEX] == sid]
+				ax.scatter(sidCoords[:,params.X_INDEX],-sidCoords[:,params.Y_INDEX],sidCoords[:,params.Z_INDEX], color=params.SID_COLORS[sid], s=params.SID_PLOTTING_RADII[sid])
+			plt.show()			
+
+		else:
+			exit('Error: # Dimensions must be 2 or 3')
+	
+		
 
 
 	def __str__(self):
@@ -917,21 +959,15 @@ class SWC:
 
 
 if __name__ == '__main__':
-	swcPath = '/data/elowsky/OLST/swc_analysis/automatically_traced/flagship/morphometric_analysis/swcs/2_171012_13.swc'
+	swcPath = '/data/elowsky/OLST/swc_analysis/automatically_traced/flagship/layer_5/registered_smoothed_microns/171012_30.swc'
 
 	swc = SWC(swcPath)
 	
-	#print(swc.checkForDuplicates())
 	print('# Stems:',swc.numStems())
 	print('# Nodes:',swc.numNodes())
-	#print('# Terminal Nodes:',swc.numTerminalNodes())
-	#print('# Bifurcation Nodes:',swc.numBifurcationNodes())
-	#print('EucDistances:',swc.Lmeasure_EucDistance())
-	#print('Length:',swc.Lmeasure_Length())
-	#print('PathDistance:',swc.Lmeasure_PathDistance())
-	
-	print('Maximum Radial Distance:', swc.maxRadialDistance())
-	swc.sholl()
+
+	swc.plot()
+
 
 
 
