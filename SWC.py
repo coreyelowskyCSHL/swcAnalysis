@@ -777,60 +777,81 @@ class SWC:
 		return duplicateIDs
 
 
+	def smooth(self, orientation):
 
+		"""
+		Params: orientation, string, 'corona'l or 'oblique', oblique smooths z, coronal smooths y
+			
 
-
-	
-
+		- smooths coordinates to  (non biological) sharp edges
+		- doesnt change soma, children of soma, terminal nodes, bifurcation nodes, or children of bifurcation nodes
 		
+		"""
 
-	def smooth(self, coord='z'):
-	# (n+2) moving average where n is number of children
-	### CAREFUL WITH CORONAL OR OBLIQUE ######
-	# if smoothing in coronal, must smooth y (index 1)
+		if orientation != 'coronal' and orientation != 'oblique':
+			exit('Error: Invalid Orientation!')
 
-		stack = [node_root]
+		diff = self.smoothingDiffs(orientation)
 
-		while len(stack) > 0:
+		diffChange, iters = np.Inf, 0
 
-			node = stack.pop(0)
+		while diffChange > params.SMOOTHING_DIFF_THRESHOLD or iters < params.SMOOTHING_ITERS_THRESHOLD:
 
-			# dont smooth soma or children of soma
-			if node != node_root:
-				child_nodes = node.childNodes
-				# dont change terminal nodes or bifurcation nodes or children of bifurcation nodes
-				if len(child_nodes) == 1 and len(node.parentNode.childNodes) == 1:
-					child_y_sum = sum([n.temp_y for n in child_nodes])
-					updated_y = (child_y_sum + node.temp_y + node.parentNode.temp_y)/(len(child_nodes) + 2)
-					node.y = updated_y
+			# smooth
+			stack = [self.nodeSoma]
 
-			for c in node.childNodes:
-				stack.append(c)
+			while len(stack):
 
-		# set z
-		for node in nodes_in_tree(node_root):
-			node.temp_y = node.y
+				node = stack.pop()
 	
+				# make sure not soma and has 1 child (discludes bifurcation and terminal nodes
+				if node != self.nodeSoma and len(node.childNodes) == 1 and len(node.parentNode.childNodes) == 1:
 
-		return node_root
+					if orientation == 'coronal':
+						node.tmp = (node.parentNode.y + node.y + node.childNodes[0].y)/3
+					elif orientation == 'oblique':
+						node.tmp = (node.parentNode.z + node.z + node.childNodes[0].z)/3
 
-	def get_differences(node_root):
-		stack = [node_root]
+				for childNode in node.childNodes:
+					stack.append(childNode)
 
-		dx,dy,dz = 0,0,0
-		while len(stack) > 0:
+			# update coordinates
+			for node in self.getNodesInTree():
+				if node.tmp:
+					if orientation == 'coronal':
+						node.y = node.tmp
+					elif orientation == 'oblique':
+						node.z = node.tmp
 
-			node = stack.pop(0)
 
-			for c in node.childNodes:
-				if node != node_root:
-					dx += abs(node.x - c.x)
-					dy += abs(node.y - c.y)
-					dz += abs(node.z - c.z)
-		
-				stack.append(c)
+			# recaulate differences
+			diffSmoothed = self.smoothingDiffs(orientation)
+			diffChange = abs(diffSmoothed - diff)
+			diff = diffSmoothed
+			iters += 1
+			print(diffChange)
+		print('# iters:',iters)
 
-		return [dx,dy,dz]
+
+	def smoothingDiffs(self,orientation):
+
+		stack = [self.nodeSoma]
+
+		diff = 0
+
+		while len(stack):
+
+			node = stack.pop()
+
+			for childNode in node.childNodes:
+				if node != self.nodeSoma:
+					if orientation == 'coronal':
+						diff += abs(node.y - childNode.y)
+					elif orientation == 'oblique':
+						diff += abs(node.z - childNode.z)
+				stack.append(childNode)
+
+		return diff
 
 	def sholl(self, radialPercentIncrement = 5):
 
@@ -927,6 +948,38 @@ class SWC:
 
 		return innerNodes, outerNodes
 		
+	def setStructureLabels(self, labelInfo):
+		
+		self.nodeSoma.structureID = 1
+
+		for childNode in self.nodeSoma.childNodes:
+			
+			for labelTup in labelInfo:
+				sID = None
+				if labelTup[0] == childNode.id_:
+					sID = labelTup[1]
+					break
+
+			if sID == None:
+				exit('Error: Soma Child with Label Not Found!')
+
+			stack = [childNode]
+
+			while len(stack):
+
+				node = stack.pop()
+			
+				node.structureID = sID
+
+				for childNode in node.childNodes:
+					stack.append(childNode)
+		
+		# Error Check
+		nodes = self.getNodesInTree()
+		if sum([node for node in nodes if node.structureID == 0]) > 0:
+			exit('Some nodes do not have label!')					
+			
+			
 
 	def plot(self,dim=2):
 	
@@ -959,14 +1012,13 @@ class SWC:
 
 
 if __name__ == '__main__':
-	swcPath = '/data/elowsky/OLST/swc_analysis/automatically_traced/flagship/layer_5/registered_smoothed_microns/171012_30.swc'
 
+	swcPath = '/data/elowsky/OLST/swc_analysis/automatically_traced/flagship/layer_5/190416/normalized_oblique_collapsed_soma_with_labels/190416_15.swc'
 	swc = SWC(swcPath)
 	
-	print('# Stems:',swc.numStems())
-	print('# Nodes:',swc.numNodes())
 
-	swc.plot()
+
+	swc.plot(3)
 
 
 

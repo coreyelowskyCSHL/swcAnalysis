@@ -85,7 +85,19 @@ def writeBranchMarkupFile(path, coords, ids):
 			else:
 				fp.write(ids[i][0] + ' : ' + ids[i][1] +' : ' + str(coord[0]) + ',' + str(coord[1]) + ',' + str(coord[2]) + '\n')
 
+def readBranchMarkups(path):
 
+	labelInfo = []
+
+	with open(path,'r') as fp:
+		lines = fp.readlines()
+		for line in lines:
+			if '\t' in line:
+				id_ = int(line.split(':')[1])
+				label = int([l for l in line.split('\t') if l != '' and l != '\n'][-1][0])
+				labelInfo.append((id_,label))
+	
+	return labelInfo
 
 # Extracts stitching information from xml file generated from BigStitcher
 def extract_stitching_parameters(xml_file):

@@ -13,6 +13,9 @@ class Node:
 		# list of child nodes
 		self.childNodes = []
 
+		# temporary coord for smoothing
+		self.tmp = None
+
 
 	def getCoords(self):
 		return [self.x, self.y, self.z]
