@@ -1,13 +1,17 @@
 import numpy as np
 import math
-import params
-from Node import Node
-from os.path import exists
-from sys import exit
 import tifffile as tif
 import copy
 import matplotlib.pyplot as plt
+import params
+import utils
+from Node import Node
+from os.path import exists, join
+from sys import exit
 from mpl_toolkits.mplot3d import Axes3D
+from skimage.io import imread
+
+
 
 
 """
@@ -37,7 +41,7 @@ class SWC:
 		self.buildSWCTree()
 
 
-	def buildSWCTree(self):
+	def buildSWCTree(self, * , fromPath=True, swcArray=None):
 
 		"""
 		loads SWC file and builds a tree structure where each coordinate in the SWC is
@@ -47,11 +51,14 @@ class SWC:
 
 		print('Building SWC Tree:', self.swcPath.split('/')[-1])
 
-		# load swc 
-		if exists(self.swcPath):
-			swcArray = np.genfromtxt(self.swcPath,delimiter=params.SWC_DELIMITER,dtype=object)
-		else:
-			exit('ERROR: SWC Path Does Not Exist!!!')
+		# load swc
+
+		if fromPath: 
+			if exists(self.swcPath):
+				swcArray = np.genfromtxt(self.swcPath,delimiter=params.SWC_DELIMITER,dtype=object)
+			else:
+				exit('ERROR: SWC Path Does Not Exist!!!')
+
 
 		# check for dimension error
 		if swcArray.ndim != 2:
@@ -150,7 +157,7 @@ class SWC:
 		while len(stack):
 
 			node = stack.pop()
-			
+
 			node.x += xShift
 			node.y += yShift
 			node.z += zShift
@@ -169,7 +176,10 @@ class SWC:
 		if nodeRoot == None:
 			nodeRoot = self.nodeSoma
 		
-		xScale, yScale, zScale = scaleFactors[0], scaleFactors[1] ,scaleFactors[2]
+		if len(scaleFactors) == 1:
+			xScale, yScale, zScale = scaleFactors[0], scaleFactors[0] ,scaleFactors[0]
+		else:
+			xScale, yScale, zScale = scaleFactors[0], scaleFactors[1] ,scaleFactors[2]
 
 		stack = [nodeRoot]
 
@@ -194,7 +204,7 @@ class SWC:
 
 		self.scaleCoords(scaleFactors=[1,-1,1], nodeRoot=nodeRoot)
 
-	def pixelsToMicrons(self,orientation, nodeRoot=None):
+	def pixelsToMicrons(self,orientation, *, centerAroundSoma=False,  nodeRoot=None):
 
 		"""
 		Params: orientation - string, orientation of coordinates (coronal or oblique)
@@ -210,9 +220,12 @@ class SWC:
 		else:
 			exit('Orientation Variable Not Valid: ' + orientation)
 
+		if centerAroundSoma:
+			self.centerAroundSoma()
+
 		self.scaleCoords(scaleFactors=resFactors, nodeRoot=nodeRoot)
 
-	def micronsToPixels(self,orientation, nodeRoot=None):
+	def micronsToPixels(self,orientation, somaCenter=None, nodeRoot=None):
 
 		"""
 		Params: orientation - string, orientation of coordinates (coronal or oblique)
@@ -230,6 +243,34 @@ class SWC:
 
 		self.scaleCoords(scaleFactors=1/np.array(resFactors), nodeRoot=nodeRoot)
 
+		if somaCenter != None:
+			self.translateCoords(somaCenter, nodeRoot=nodeRoot)
+
+	def applyStitchingMatrices(self, stitchingMatrices):
+
+		self.transformCoords(stitchingMatrices['calibration'])
+		self.transformCoords(stitchingMatrices['Translation to Regular Grid'])
+		self.transformCoords(stitchingMatrices['Stitching Transform'])
+		self.transformCoords(np.linalg.inv(stitchingMatrices['calibration']))
+
+
+	def transformCoords(self, transformationMatrix):
+
+		stack = [self.nodeSoma]
+
+		while len(stack):
+
+			node = stack.pop()
+			nodeCoords = transformationMatrix @ np.array([node.x,node.y,node.z,1]).reshape(-1,1)
+			node.x = nodeCoords.flatten()[0]
+			node.y = nodeCoords.flatten()[1]
+			node.z = nodeCoords.flatten()[2]
+
+
+			for childNode in node.childNodes:
+				stack.append(childNode)
+
+		
 
 	def extractTypeTree(self, structure):
 
@@ -249,14 +290,33 @@ class SWC:
 		newChildArray = [node for node in self.nodeSoma.childNodes if node.structureID == sID]
 		self.nodeSoma.childNodes = newChildArray
 
-	def centerAroundSoma(self):
+
+	def obliqueToCoronal(self, fusedDimensions, shearFactor):
+
+		stack = [self.nodeSoma]
+
+		while len(stack):
+
+			node = stack.pop()
+
+			coronalCoords = utils.obliqueToCoronal([node.x,node.y,node.z], fusedDimensions, shearFactor)
+			node.x = coronalCoords[0]
+			node.y = coronalCoords[1]
+			node.z = coronalCoords[2]
+
+			for childNode in node.childNodes:
+				stack.append(childNode)
+
+		
+
+	def centerAroundSoma(self, nodeRoot=None):
 
 		"""
 		Translates all coordinates so soma is at (0,0,0)
 
 		"""
 
-		self.translateCoords(shifts=[-self.nodeSoma.x, -self.nodeSoma.y ,-self.nodeSoma.z])
+		self.translateCoords(shifts=[-self.nodeSoma.x, -self.nodeSoma.y ,-self.nodeSoma.z], nodeRoot=nodeRoot)
 
 	def numNodes(self):
 		
@@ -410,14 +470,14 @@ class SWC:
 				id_ += 1
 
 
-	def generateSWCArray(self):
+	def generateSWCArray(self, onlyCoords=False):
 
 		"""
 		Return: 2D array, SWC in 2D array
 	
 		"""
 
-		out_swc = []
+		outSWC = []
 
 		id_ = 1
 
@@ -428,14 +488,17 @@ class SWC:
 			nodeTup = stack.pop()
 			node, pid = nodeTup[0], nodeTup[1]
 		
-			out_swc.append([id_,node.structureID,node.x,node.y,node.z,node.radius,pid])			
+			outSWC.append([id_,node.structureID,node.x,node.y,node.z,node.radius,pid])			
 
 			for c in node.childNodes:
 				stack.append((c,id_))
 
 			id_ += 1
 
-		return np.array(out_swc)
+		if onlyCoords:
+			return np.array(outSWC)[:,[params.X_INDEX, params.Y_INDEX, params.Z_INDEX]]
+		else:
+			return np.array(outSWC)
 
 	def saveSWC(self, outPath, fmt=params.SWC_FORMAT_FLOAT):
 
@@ -603,6 +666,8 @@ class SWC:
 
 		return totalDistance, minDistance, avgDistance, maxDistance, stdDistance
 
+
+	
 	def terminalNodes(self,nodeRoot=None):
 
 		if nodeRoot == None:
@@ -977,7 +1042,63 @@ class SWC:
 		# Error Check
 		nodes = self.getNodesInTree()
 		if sum([node for node in nodes if node.structureID == 0]) > 0:
-			exit('Some nodes do not have label!')					
+			exit('Some nodes do not have label!')
+
+	def register(self,brain):
+
+		"""
+		Assumes SWC is in coronal orientation
+		"""
+
+		cropDict = utils.loadCropInfo()
+
+		# apply cropping shift
+		shift = cropDict[brain]
+		self.translateCoords([0,-shift*params.CROP_FACTOR,0])
+				
+		# get coordinates
+		swcCoords = self.generateSWCArray(onlyCoords=True)
+
+		brainPath = join(params.REGISTRATION_BASE_PATH, brain)
+
+		# write coords to file
+		outPath = join(brainPath,'swc_in.txt')
+		utils.writeCoordsForRegistration(outPath, swcCoords)
+
+		# run transformix
+		tpPath = join(brainPath,'TransformParameters_labels.1_full_scale.txt')
+		inPath = join(brainPath,'swc_in.txt')
+		utils.runTransformix(brainPath, tpPath, inPath)
+
+		# read in registered coordinates
+		transformedCoordsPath = join(brainPath,'outputpoints.txt')
+		registeredCoords = utils.parseTransformixOutput(transformedCoordsPath)
+
+		swcArray = self.generateSWCArray()
+		swcArray[:,[params.X_INDEX, params.Y_INDEX, params.Z_INDEX]] = registeredCoords
+
+		# re build SWC Tree
+		self.buildSWCTree(fromPath=False, swcArray=swcArray)
+
+		self.scaleCoords([params.REGISTRATION_RES_MICRONS])
+
+
+	def overlayOnReferenceSpace(self, outPath, * , downsampling=25):
+
+		referenceImage = imread(params.MOP_REFERENCE_PATHS[downsampling])
+
+		swc.scaleCoords([1/downsampling])
+
+		swcArray = self.generateSWCArray(onlyCoords=True).astype(int)
+
+		referenceImage[swcArray[:,2],swcArray[:,1],swcArray[:,0]] = params.OVERLAY_INTENSITY
+
+		tif.imsave(outPath, referenceImage)
+
+		
+
+		
+				
 			
 			
 
@@ -1004,7 +1125,7 @@ class SWC:
 		else:
 			exit('Error: # Dimensions must be 2 or 3')
 	
-		
+
 
 
 	def __str__(self):
@@ -1013,12 +1134,10 @@ class SWC:
 
 if __name__ == '__main__':
 
-	swcPath = '/data/elowsky/OLST/swc_analysis/automatically_traced/flagship/layer_5/190416/normalized_oblique_collapsed_soma_with_labels/190416_15.swc'
+	swcPath = '/data/elowsky/OLST/swc_analysis/automatically_traced/flagship/layer_6/190416/registered/190416_23.swc'
 	swc = SWC(swcPath)
-	
-
-
-	swc.plot(3)
+	#swc.overlayOnReferenceSpace('/data/elowsky/OLST/swc_analysis/automatically_traced/flagship/layer_6/190416/registered/190416_23_overlay.tif', downsampling=10)
+	swc.plot()
 
 
 

@@ -7,10 +7,9 @@ class Node:
 		self.x, self.y, self.z = x,y,z
 		self.radius = radius
 
-		# pointer to parent node
 		self.parentNode = parentNode
 			
-		# list of child nodes
+
 		self.childNodes = []
 
 		# temporary coord for smoothing
