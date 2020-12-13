@@ -23,6 +23,7 @@ class StitchingXML:
 		self.parseRegistrations()
 		self.pairwiseStitchings = self.parsePairwiseStitchings()
 
+		# calculate volume dimension info
 		if numYVolumes == None or numZVolumes == None:
 			self.numYVolumes, self.numZVolumes = self.inferYZVolumes()
 		else:
@@ -30,23 +31,73 @@ class StitchingXML:
 			self.numZVolumes = numZVolumes
 
 		self.numVolumes = self.numYVolumes*self.numZVolumes
+
+		# calculate anisotropy factor
 		self.anisotropyFactor = self.calculateAnisotropyFactor()
+
+		# calculate overlap
+		self.overlap = self.calculateTranslationToGridOverlap()
 
 
 
 	def calculateAnisotropyFactor(self):
-		
+
+		"""
+		calculates anisotropy factor (Z resolution / XY Resolution) 
+		"""
+
 		voxelSize = self.setupsAndRegistrations[0]['voxel size']
-		return voxelSize[2]/voxelSize[1]
+		anisotropyFactor =  voxelSize[2]/voxelSize[1]
+
+		# check if all anisotropy factors are the same
+		for _, setupDict in self.setupsAndRegistrations.items():
+			
+			voxelSizeLocal = setupDict['voxel size']
+			anisotropyFactorLocal = voxelSizeLocal[2]/voxelSizeLocal[1]
+	
+			if anisotropyFactor != anisotropyFactorLocal:
+				exit('Error: Anisotropy Factors are not all same!')
+			
+		return anisotropyFactor
+
+	def calculateTranslationToGridOverlap(self):
+
+		"""
+		calculate y and z overlap for translation to grid
+		"""
+
+		vol1 = self.setupsAndRegistrations[0]
+		volY = self.setupsAndRegistrations[1]
+		volZ = self.setupsAndRegistrations[self.numYVolumes]
+
+		yOverlap = np.round(100*(volY['Translation to Regular Grid'][0,-1] + volY['size'][0] - vol1['Translation to Regular Grid'][0,-1]) / vol1['size'][0])
+		zOverlap = np.round(100*(vol1['size'][1] + vol1['Translation to Regular Grid'][1,-1] - volZ['Translation to Regular Grid'][1,-1]) / vol1['size'][1])
+
+		return [int(yOverlap), int(zOverlap)]
+
 
 
 	def setupIDtoY(self, setupID):
+
+		"""
+		Converts setup ID to Y
+		"""
+
 		return (setupID % self.numYVolumes) + 1
 
 	def setupIDtoZ(self, setupID):
+
+		"""
+		Converts setup ID to Z
+		"""
+
 		return (setupID // self.numYVolumes) + 1
 
 	def setupIDtoVolume(self, setupID):
+
+		"""
+		Converts setup ID to Volume (Z12_Y08)
+		"""
 
 		y = '{:02}'.format(self.setupIDtoY(setupID))
 		z = '{:02}'.format(self.setupIDtoZ(setupID))
@@ -54,6 +105,10 @@ class StitchingXML:
 		return 'Z' + z + '_Y' + y
 
 	def volumeToSetupID(self, volume):
+
+		"""
+		Converts Volume (Z12_Y08) to setup ID
+		"""
 
 		z = int(volume.split('_')[0][1:])
 		y = int(volume.split('_')[1][1:])
@@ -144,6 +199,15 @@ class StitchingXML:
 
 	def analyzeCorrelations(self, * , zPair = None, yPair = None):
 		
+	
+		"""
+		Provides detailed breakdown of correlations
+
+		Parmams: zPair, set that contains pair of Zs to get correlations across, (e.g. {4,5})
+			 yPair, set that contains pair of Ys to get correlations across, (e.g. {4,5})
+
+		"""
+	
 		print()
 		print('Analyzing Correlations...')
 		print()
@@ -189,6 +253,7 @@ class StitchingXML:
 		print('Y Corrs:',yCorrs)
 		print('Z Corrs:',zCorrs)
 		print('YZ Corrs:',yzCorrs)
+		print()
 
 
 	def getStitchingMatrices(self, volume):
@@ -215,8 +280,8 @@ class StitchingXML:
 		"""
 		Calculated dimensions of big stitcher image after fusing
 
-		Params: volumeSize, pixel dimensions of volumes [xLength, yLength, zLength]
-		Return: 
+		Params: downamspling, int that determines how much image will be downsampled
+		Return: dictionary containing dimension information
 		"""
 
 		xCoords, yCoords, zCoords = [], [], []
@@ -249,15 +314,30 @@ class StitchingXML:
 		
 		return dimensions
 
+	
+	def __str__(self):
 
-					
+		s = '\nXML Path: ' + self.xmlPath + '\n'
+		s += '# Volumes: ' + str(self.numVolumes) + '\n'
+		s += '# Z: ' + str(self.numZVolumes) + '\n'
+		s += '# Y: ' + str(self.numYVolumes) + '\n'
+		s += 'Resolution: ' + str(self.setupsAndRegistrations[0]['voxel size']) + '\n'
+		s += 'Volume Size: ' + str(self.setupsAndRegistrations[0]['size']) + '\n'
+		s += 'Y Overlap: ' + str(self.overlap[0]) + '%' + '\n'
+		s += 'Z Overlap: ' + str(self.overlap[1]) + '%' + '\n'
+		s += '# Correlations: ' + str(len(self.pairwiseStitchings)) + '\n'
+		
+		return s
+		 
 
 
 if __name__ == '__main__':
 
-	xml = StitchingXML('/data/elowsky/OLST_2/data/Vglut_stitching/N5_gzip_36Z/dataset.xml~2')
+	xml = StitchingXML('/data/elowsky/OLST_2/data/VIP-GFP/Z3_Z4b/dataset.xml')
+	print(xml)
+	xml.analyzeCorrelations()
 
-	xml.analyzeCorrelations(zPair={3,4})
+	
 
 
 

@@ -12,8 +12,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from skimage.io import imread
 
 
-
-
 """
 SWC object
 	- swc is internally represented as a tree of nodes
@@ -22,10 +20,12 @@ SWC object
 
 class SWC:
 
-	def __init__(self, swcPath, preserveSID=True, preserveRadius=True):
+	def __init__(self, swcPath, * , fromPath=True, swcArray=None, preserveSID=True, preserveRadius=True):
 
 		"""
 		Params:	swcPath - string, absolute path of swc file 
+			fromPath - boolean, if true reads swc from file, else reads from array
+			swcArray - 2d numpy arraym 
 			preserveSID - boolean, if false will set all structure id values to 0
 			preserveRadius - boolean, if false will set all radius values to 0
 		
@@ -35,39 +35,52 @@ class SWC:
 		"""		
 
 		self.swcPath = swcPath
-		self.preserveSID = preserveSID
-		self.preserveRadius = preserveRadius
 
-		self.buildSWCTree()
+		# build SWC tree sutructure
+		self.buildSWCTree(fromPath=fromPath, swcArray=swcArray, preserveSID=preserveSID, preserveRadius=preserveRadius)
 
 
-	def buildSWCTree(self, * , fromPath=True, swcArray=None):
+	def buildSWCTree(self, * , fromPath=True, swcArray=None, preserveSID=True, preserveRadius=True):
 
 		"""
 		loads SWC file and builds a tree structure where each coordinate in the SWC is
 		represented by a Node in the tree
 
-		"""
+		Params: fromPath, boolean if true will read swc from file, otherwise will read from swcArray parameter
+			swcArray, 2d array representation of swc 
 
-		print('Building SWC Tree:', self.swcPath.split('/')[-1])
+		"""
 
 		# load swc
 
 		if fromPath: 
 			if exists(self.swcPath):
+				print('Building SWC Tree:', self.swcPath.split('/')[-1])
 				swcArray = np.genfromtxt(self.swcPath,delimiter=params.SWC_DELIMITER,dtype=object)
 			else:
 				exit('ERROR: SWC Path Does Not Exist!!!')
+		else:
+			if swcArray is None:
+				exit('ERROR: If not reading from path must provide swcArray!')
+
+			if not isinstance(swcArray,np.ndarray):
+				exit('ERROR: swcArray must be of type numpy array!')
 
 
-		# check for dimension error
+		# dimension errors
 		if swcArray.ndim != 2:
-			exit('Error: # Dimensions of SWC Array is ' + str(swcArray.ndim))
+			exit('Error: # Dimensions of SWC Array is ' + str(swcArray.ndim) + ' and must be 2!')
 
-		self.fixTypes(swcArray)
+		if swcArray.shape[1] != len(params.SWC_INDICES):
+			exit('Error: # Columns of SWC Array is '+ str(swcArray.shape[1]) + ' and must be '+str(len(params.SWC_INDICES)))
+
+
+		# modify data types
+		swcArray = utils.fixSWCArrayTypes(swcArray)
 		
 		# build node for soma
-		self.nodeSoma = self.buildNode(swcArray[swcArray[:,params.PID_INDEX]==params.SOMA_PID][0])
+		somaRow = utils.getSomaRowFromSWCArray(swcArray)
+		self.nodeSoma = utils.buildNode(somaRow, preserveSID=preserveSID, preserveRadius=preserveRadius)
 
 		stack = [self.nodeSoma]
 
@@ -76,44 +89,13 @@ class SWC:
 			node = stack.pop()
 
 			# get all children
-			childRows = swcArray[swcArray[:,params.PID_INDEX] == node.id_]
+			childRows = utils.getChildRowsFromSWCArray(swcArray, node.id_)
 
 			# build nodes and push child on stack
 			for childRow in childRows:
-				nodeChild = self.buildNode(childRow, parentNode=node)
+				nodeChild = utils.buildNode(childRow, parentNode=node, preserveSID=preserveSID, preserveRadius=preserveRadius)
 				node.childNodes.insert(0,nodeChild)
 				stack.append(nodeChild)
-
-	def buildNode(self,swcRow,parentNode=None):
-
-		"""
-		Params: swcRow - 1D array, [id, structureID, x, y, z, radius, parentID]
-			parentNode - Node
-
-		Return: Node object populated with values from swcRow
-
-		"""
-		
-		sID = swcRow[params.SID_INDEX] if self.preserveSID else 0
-		radius = swcRow[params.RADIUS_INDEX] if self.preserveRadius else 0
-		
-		node = Node(swcRow[params.ID_INDEX],sID,swcRow[params.X_INDEX],swcRow[params.Y_INDEX],swcRow[params.Z_INDEX],radius,parentNode=parentNode)
-
-		return node
-
-
-	def fixTypes(self, swcArray):
-	
-		"""
-		Params: swcArray, 2D array, swc array
-		
-		Changes data type of id,structure id,radius,parent id, to int
-		Chnages data type of x,y,z to float
-
-		"""
-
-		swcArray[:,[params.ID_INDEX,params.SID_INDEX,params.RADIUS_INDEX,params.PID_INDEX]] = swcArray[:,[params.ID_INDEX,params.SID_INDEX,params.RADIUS_INDEX,params.PID_INDEX]].astype(float).astype(int)
-		swcArray[:,[params.X_INDEX,params.Y_INDEX,params.Z_INDEX]] = swcArray[:,[params.X_INDEX,params.Y_INDEX,params.Z_INDEX]].astype(float)	
 
 
 	def getNodesInTree(self, nodeRoot=None):
@@ -168,18 +150,24 @@ class SWC:
 	def scaleCoords(self, scaleFactors, nodeRoot=None):
 
 		"""
-		Params: scaleFactors, list of 3 floats [x scale, y scale, z scale]
+		Params: scaleFactors, list of 3 floats [x scale, y scale, z scale] or just scalar 
 
 		Scales all coordinates
 		"""
 		
+		if isinstance(scaleFactors,float) or isinstance(scaleFactors,int):
+			xScale, yScale, zScale = scaleFactors, scaleFactors, scaleFactors
+		elif isinstance(scaleFactors,list):
+
+			if len(scaleFactors) == 3:
+				xScale, yScale, zScale = scaleFactors[0], scaleFactors[1] ,scaleFactors[2]
+			else:
+				exit('ERROR: if scaleFactors is a list it must be of length 3!')
+		else:
+			exit('ERROR: scaleFactors must be of type int, float, or list!')
+
 		if nodeRoot == None:
 			nodeRoot = self.nodeSoma
-		
-		if len(scaleFactors) == 1:
-			xScale, yScale, zScale = scaleFactors[0], scaleFactors[0] ,scaleFactors[0]
-		else:
-			xScale, yScale, zScale = scaleFactors[0], scaleFactors[1] ,scaleFactors[2]
 
 		stack = [nodeRoot]
 
@@ -241,7 +229,7 @@ class SWC:
 		else:
 			exit('Orientation Variable Not Valid: ' + orientation)
 
-		self.scaleCoords(scaleFactors=1/np.array(resFactors), nodeRoot=nodeRoot)
+		self.scaleCoords(scaleFactors=list(1/np.array(resFactors)), nodeRoot=nodeRoot)
 
 		if somaCenter != None:
 			self.translateCoords(somaCenter, nodeRoot=nodeRoot)
@@ -309,14 +297,14 @@ class SWC:
 
 		
 
-	def centerAroundSoma(self, nodeRoot=None):
+	def centerAroundSoma(self):
 
 		"""
 		Translates all coordinates so soma is at (0,0,0)
 
 		"""
 
-		self.translateCoords(shifts=[-self.nodeSoma.x, -self.nodeSoma.y ,-self.nodeSoma.z], nodeRoot=nodeRoot)
+		self.translateCoords(shifts=[-self.nodeSoma.x, -self.nodeSoma.y ,-self.nodeSoma.z])
 
 	def numNodes(self):
 		
@@ -409,7 +397,7 @@ class SWC:
 			print('Saving Tiff as 8 bit (Branch Ids Same)...')
 		else:
 			# calculate how many nodes
-			numNodes = self.numNodes
+			numNodes = self.numNodes()
 
 			if numNodes <= 2**8 - 1:
 				print('Saving Tiff as 8 bit...')
@@ -496,7 +484,7 @@ class SWC:
 			id_ += 1
 
 		if onlyCoords:
-			return np.array(outSWC)[:,[params.X_INDEX, params.Y_INDEX, params.Z_INDEX]]
+			return np.array(outSWC)[:,[params.SWC_INDICES['x'], params.SWC_INDICES['y'], params.SWC_INDICES['z']]]
 		else:
 			return np.array(outSWC)
 
@@ -512,6 +500,10 @@ class SWC:
 		"""
 
 		print('Saving SWC:',outPath)
+
+		# remove duplicates
+		self.removeDuplicates()
+
 		swcArray = self.generateSWCArray()
 		np.savetxt(outPath,swcArray,delimiter=params.SWC_DELIMITER,fmt=fmt)
 
@@ -795,6 +787,9 @@ class SWC:
 
 			if node != self.nodeSoma:
 				if self.areCoordsSame(node, node.parentNode):
+					
+					print('REMOVING DUPLICATE...')
+
 					node.parentNode.childNodes = node.childNodes
 
 					# set childrens parent pointers to grandparent
@@ -1136,8 +1131,10 @@ if __name__ == '__main__':
 
 	swcPath = '/data/elowsky/OLST/swc_analysis/automatically_traced/flagship/layer_6/190416/registered/190416_23.swc'
 	swc = SWC(swcPath)
-	#swc.overlayOnReferenceSpace('/data/elowsky/OLST/swc_analysis/automatically_traced/flagship/layer_6/190416/registered/190416_23_overlay.tif', downsampling=10)
-	swc.plot()
+	swc.scaleCoords(2)
+	
+
+	
 
 
 

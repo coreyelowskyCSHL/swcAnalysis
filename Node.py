@@ -16,6 +16,7 @@ class Node:
 		self.tmp = None
 
 
+
 	def getCoords(self):
 		return [self.x, self.y, self.z]
 

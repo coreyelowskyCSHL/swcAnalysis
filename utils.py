@@ -5,6 +5,59 @@ import xml.etree.ElementTree as ET
 
 from os.path import join
 from os import system
+from Node import Node
+from sys import exit
+
+
+def buildNode(swcRow, * ,  parentNode=None, preserveSID=True, preserveRadius=True):
+
+	"""
+	Params: swcRow - 1D array, [id, structureID, x, y, z, radius, parentID]
+		parentNode - Node
+		preserveSID - boolean
+		preserveRadius - boolean
+
+	Return: Node object populated with values from swcRow
+
+	"""
+	
+	sID = swcRow[params.SWC_INDICES['sid']] if preserveSID else 0
+	radius = swcRow[params.SWC_INDICES['radius']] if preserveRadius else 0
+	
+	node = Node(swcRow[params.SWC_INDICES['id']],sID,swcRow[params.SWC_INDICES['x']],swcRow[params.SWC_INDICES['y']],swcRow[params.SWC_INDICES['z']],radius,parentNode=parentNode)
+
+	return node
+
+def fixSWCArrayTypes(swcArray):
+
+	"""
+	Params: swcArray, 2D array, swc array
+	
+	Changes data type of id,structure id,radius,parent id, to int
+	Chnages data type of x,y,z to float
+
+	"""
+
+	swcArray[:,[params.SWC_INDICES['id'],params.SWC_INDICES['sid'],params.SWC_INDICES['radius'],params.SWC_INDICES['pid']]] = swcArray[:,[params.SWC_INDICES['id'],params.SWC_INDICES['sid'],params.SWC_INDICES['radius'],params.SWC_INDICES['pid']]].astype(float).astype(int)
+	swcArray[:,[params.SWC_INDICES['x'],params.SWC_INDICES['y'],params.SWC_INDICES['z']]] = swcArray[:,[params.SWC_INDICES['x'],params.SWC_INDICES['y'],params.SWC_INDICES['z']]].astype(float)
+	
+	return swcArray
+
+def getSomaRowFromSWCArray(swcArray):
+	
+	somaRow = swcArray[swcArray[:,params.SWC_INDICES['pid']]==params.SOMA_PID]
+
+	if len(somaRow) != 1:
+		exit('Error: # of somas is ' + str(len(somaRow)) +' and must be 1!')
+
+	return swcArray[swcArray[:,params.SWC_INDICES['pid']]==params.SOMA_PID][0]
+
+
+def getChildRowsFromSWCArray(swcArray, parentID):
+
+	return swcArray[swcArray[:,params.SWC_INDICES['pid']] == parentID]
+
+
 
 
 ###### Utility functions for Oblique -> Coronal Transformation #######
@@ -123,7 +176,9 @@ def getSWCBrainAndID(swcName):
 		brain = swcName.split('_')[0]
 		swcID = int(swcName.split('_')[-1])
 
-	return brain, swcID
+	brainSWCID = brain + '_' + str(swcID)
+
+	return brain, swcID, brainSWCID
 
 def loadCropInfo():
 

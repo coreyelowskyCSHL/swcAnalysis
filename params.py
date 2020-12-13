@@ -1,4 +1,5 @@
 # Paths
+INITIAL_SWC_BASE_PATH = '/data/palmer/data/reconstructed_brains/'
 SOMA_BASE_PATH = '/data/elowsky/OLST/soma_detection/'
 SWC_BASE_PATH = '/data/elowsky/OLST/swc_analysis/automatically_traced/flagship/'
 REGISTRATION_BASE_PATH = '/data/elowsky/OLST/registration/'
@@ -35,13 +36,7 @@ SWC_FORMAT_INT = ['%d','%d','%d','%d','%d','%d','%d']
 SWC_FORMAT_FLOAT = ['%d','%d','%g','%g','%g','%d','%d']
 
 # SWC Indices
-ID_INDEX = 0
-SID_INDEX = 1
-X_INDEX = 2
-Y_INDEX = 3
-Z_INDEX = 4
-RADIUS_INDEX = 5
-PID_INDEX = 6
+SWC_INDICES = {'id':0 , 'sid':1 , 'x':2 , 'y':3 ,'z':4 ,'radius':5 ,'pid':6 }
 
 # Soma Parent ID
 SOMA_PID = -1
